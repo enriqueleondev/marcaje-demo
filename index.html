@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>Marcaje · Demo</title>
+    <meta name="description" content="Demo de Marcaje: pase de lista con credenciales QR y NFC, kiosco de entrada, reportes. Datos 100% ficticios.">
+    <meta name="theme-color" content="#1A0B33">
+    <meta name="referrer" content="no-referrer">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'self'; form-action 'none'">
+    <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="assets/css/app.css">
+</head>
+<body>
+    <div class="demo-banner" role="note">
+        <span>Demo con datos ficticios.<span class="b-long"> Nada se envía a ningún servidor.</span></span>
+        <button type="button" data-reset>Reiniciar demo</button>
+    </div>
+    <div id="view"></div>
+    <noscript><p style="padding:24px">La demo necesita JavaScript.</p></noscript>
+    <script src="assets/vendor/qrcode.js"></script>
+    <script type="module" src="assets/js/app.js"></script>
+</body>
+</html>
