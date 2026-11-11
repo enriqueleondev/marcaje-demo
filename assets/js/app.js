@@ -186,12 +186,116 @@ function newStudentForm() {
 }
 
 // ── docentes, grupos ──
-function docentes() {
-    const rows = S.users.map((u) => `<tr><td class="serif cell-name">${esc(D.userName(u))}${u.id === S.session ? ' <span class="mono muted">(tú)</span>' : ''}</td><td>${esc(u.email)}</td><td>${u.role === 'admin' ? 'Dirección' : 'Docente'}</td>
-        <td><span class="tag"><i class="sq ${u.temp ? 'confirmar' : 'presente'}"></i>${u.temp ? 'Contraseña temporal, vence en 24 h' : 'Activa'}</span></td>
-        <td class="actions-cell">${u.id === S.session ? '' : `<button class="link" data-act="temp" data-id="${u.id}">Generar contraseña temporal</button>`}</td></tr>`).join('');
-    return shell('docentes', `<div class="page-head"><div><h1>Docentes y dirección</h1><p>Cuentas del personal. Los alumnos no tienen cuenta.</p></div></div>${notice()}
-        <div class="table-wrap block"><table class="table"><thead><tr><th>Nombre</th><th>Correo</th><th>Rol</th><th>Acceso</th><th><span class="sr-only">Acciones</span></th></tr></thead><tbody>${rows}</tbody></table></div>`);
+// ── personal (dirección y docentes) ──
+const activeAdmins = () => S.users.filter((u) => u.role === 'admin' && u.active && !u.deleted).length;
+/** Mismas reglas que la app real: nadie se quita a sí mismo ni deja a la escuela sin dirección activa. */
+function removalBlock(u) {
+    if (u.id === S.session) return 'No puedes hacer esto con tu propia cuenta.';
+    if (u.role === 'admin' && u.active && activeAdmins() <= 1) return 'Es la última cuenta de dirección activa.';
+    return null;
+}
+const tempPass = () => Array.from({ length: 3 }, () => Array.from(crypto.getRandomValues(new Uint8Array(4)), (n) => 'abcdefghjkmnpqrstuvwxyz23456789'[n % 31]).join('')).join('-');
+function accessStatus(u) {
+    if (!u.active) return ['falta', 'Suspendida'];
+    if (u.locked) return ['retardo', 'Bloqueada por intentos fallidos'];
+    if (u.temp) return ['confirmar', 'Contraseña temporal, vence en 24 h'];
+    return ['presente', 'Activa'];
+}
+const fmtDate = (iso) => (iso ? new Date(iso).toLocaleString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Nunca');
+
+function docentes(r) {
+    if (r.args[0] === 'importar') return staffImport();
+    if (r.args[0] === 'nuevo') return staffForm(null);
+    if (r.args[0]) { const u = D.user(S, Number(r.args[0])); if (u && !u.deleted) return staffForm(u); }
+    const section = (title, role) => {
+        const list = S.users.filter((u) => u.role === role && !u.deleted);
+        return `<section class="block"><h2 class="block-title">${title} <span class="mono muted">${list.length}</span></h2><div class="table-wrap"><table class="table"><thead><tr><th>Nombre</th><th>Correo</th><th>Acceso</th><th>Último acceso</th><th><span class="sr-only">Acciones</span></th></tr></thead><tbody>
+        ${list.map((u) => { const [sq, st] = accessStatus(u); return `<tr><td class="serif cell-name">${esc(D.userName(u))}${u.id === S.session ? ' <span class="mono muted">(tú)</span>' : ''}</td><td>${esc(u.email)}</td><td><span class="tag"><i class="sq ${sq}"></i>${st}</span></td><td class="mono muted">${fmtDate(u.lastLogin)}</td><td class="actions-cell"><a class="link" href="#/docentes/${u.id}">Editar</a></td></tr>`; }).join('')}</tbody></table></div></section>`;
+    };
+    return shell('docentes', `<div class="page-head"><div><h1>Docentes y dirección</h1><p>Cuentas del personal. Los alumnos no tienen cuenta.</p></div><div class="head-actions"><a class="btn" href="#/docentes/importar">Importar CSV</a><a class="btn primary" href="#/docentes/nuevo">Agregar cuenta</a></div></div>${notice()}${section('Docentes', 'teacher')}${section('Dirección', 'admin')}`);
+}
+
+function staffForm(u) {
+    const editing = !!u; const self = u?.id === S.session;
+    const [sq, st] = u ? accessStatus(u) : [];
+    const block = u && removalBlock(u);
+    const access = editing ? `<aside class="sec"><h2 class="sec-title">Acceso</h2>
+        <dl class="facts compact-facts"><dt>Último acceso</dt><dd class="mono">${fmtDate(u.lastLogin)}</dd><dt>Sesiones abiertas</dt><dd class="mono">${u.sessions}</dd></dl>
+        ${u.locked ? `<div class="notice is-error" style="margin:12px 0">Bloqueada por 5 intentos fallidos. Se desbloquea sola en 15 min.</div><p style="margin-bottom:14px"><button class="btn" data-act="staff-unlock" data-id="${u.id}">Desbloquear ahora</button></p>` : ''}
+        <div class="access-actions">
+            ${self ? '<p class="muted">Esta es tu cuenta: no puedes suspenderla, darla de baja ni quitarte el rol de dirección.</p>' : `
+            <button class="btn" data-act="staff-temp" data-id="${u.id}">Generar contraseña temporal</button><p class="hint">Para quien olvidó su contraseña. Vence en 24 h y obliga a cambiarla.</p>
+            <button class="btn" data-act="staff-logout" data-id="${u.id}">Cerrar sus sesiones</button><p class="hint">Sale de todos sus dispositivos.</p>
+            <button class="btn" data-act="staff-toggle" data-id="${u.id}" ${u.active && block ? 'disabled' : ''}>${u.active ? 'Suspender cuenta' : 'Reactivar cuenta'}</button><p class="hint">${u.active ? (block ?? 'Sale de inmediato y no podrá entrar hasta que la reactives.') : 'Podrá volver a entrar con su contraseña.'}</p>
+            <button class="btn danger" data-act="staff-drop" data-id="${u.id}" ${block ? 'disabled' : ''}>Dar de baja</button>${block ? `<p class="hint">${block}</p>` : ''}`}
+        </div></aside>` : '';
+    return shell('docentes', `<div class="page-head"><div><h1>${editing ? esc(D.userName(u)) : 'Agregar cuenta'}</h1><p>${editing ? `<span class="tag"><i class="sq ${sq}"></i>${st}</span>` : 'Al crearla verás una contraseña temporal de 24 h para entregarla.'}</p></div><a class="btn" href="#/docentes">Volver</a></div>${notice()}
+        <div class="two-col"><form class="sec" data-form="staff" data-id="${u?.id ?? ''}" novalidate><h2 class="sec-title">Datos</h2>
+            <div class="field"><label for="st-first">Nombre(s)</label><input class="input" id="st-first" value="${esc(u?.first ?? '')}" required></div>
+            <div class="field"><label for="st-last">Apellidos</label><input class="input" id="st-last" value="${esc(u?.last ?? '')}" required></div>
+            <div class="field"><label for="st-email">Correo</label><input class="input" id="st-email" type="email" value="${esc(u?.email ?? '')}" required><p class="hint">Con este correo entra al sistema.</p></div>
+            <div class="field"><span class="field-label">Rol</span><div class="radio-row">${[['admin', 'Dirección'], ['teacher', 'Docente']].map(([v, l]) => `<label class="check"><input type="radio" name="st-role" value="${v}" ${(u?.role ?? 'teacher') === v ? 'checked' : ''} ${self ? 'disabled' : ''}> ${l}</label>`).join('')}</div></div>
+            <p class="error" id="st-error" hidden></p>
+            <div class="form-actions"><button class="btn primary" type="submit">${editing ? 'Guardar cambios' : 'Crear cuenta'}</button></div></form>${access}</div>`);
+}
+
+// Importación CSV de personal: vista previa con errores por fila y confirmación.
+let staffImportState = null; // { role, filename, rows: [{line, first, last, email, error}] , done: [...] }
+function parseCsv(text) {
+    text = text.replace(/^﻿/, '').replace(/\r\n?/g, '\n');
+    const head = text.split('\n')[0] ?? '';
+    const delim = [',', ';', '\t'].sort((a, b) => head.split(b).length - head.split(a).length)[0];
+    const rows = []; let row = [], cell = '', q = false;
+    for (let i = 0; i < text.length; i++) {
+        const c = text[i];
+        if (q) { if (c === '"' && text[i + 1] === '"') { cell += '"'; i++; } else if (c === '"') q = false; else cell += c; }
+        else if (c === '"') q = true; else if (c === delim) { row.push(cell); cell = ''; } else if (c === '\n') { row.push(cell); rows.push(row); row = []; cell = ''; } else cell += c;
+    }
+    if (cell || row.length) { row.push(cell); rows.push(row); }
+    return rows;
+}
+const normHeader = (h) => h.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+function buildStaffPreview(text, role, filename) {
+    const table = parseCsv(text);
+    const alias = { nombre: 'first', nombres: 'first', nombre_s: 'first', apellido_paterno: 'pat', paterno: 'pat', apellido_materno: 'mat', materno: 'mat', correo: 'email', correo_electronico: 'email', email: 'email' };
+    const cols = (table[0] ?? []).map((h) => alias[normHeader(h)] ?? null);
+    if (!cols.includes('first') || !cols.includes('pat') || !cols.includes('email')) return { role, filename, fatal: 'Faltan columnas: nombre, apellido_paterno y correo. Descarga la plantilla para ver el formato.', rows: [] };
+    const existing = new Set(S.users.map((u) => u.email.toLowerCase())); const seen = {};
+    const rows = table.slice(1).map((vals, i) => ({ vals, line: i + 2 })).filter(({ vals }) => vals.some((v) => v.trim())).map(({ vals, line }) => {
+        const d = {}; cols.forEach((k, j) => { if (k) d[k] = (vals[j] ?? '').trim().replace(/\s+/g, ' '); });
+        const email = (d.email ?? '').toLowerCase(); const p = [];
+        if (!d.first) p.push('falta el nombre');
+        if (!d.pat) p.push('falta el apellido paterno');
+        if (!email) p.push('falta el correo');
+        else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) p.push(`el correo «${email}» no es válido`);
+        else if (seen[email]) p.push(`el correo se repite (también en la línea ${seen[email]})`);
+        else if (existing.has(email)) p.push('ya existe una cuenta con ese correo');
+        seen[email] ??= line;
+        return { line, first: d.first ?? '', last: [d.pat, d.mat].filter(Boolean).join(' '), email, error: p.length ? p.join('; ').replace(/^./, (c) => c.toUpperCase()) + '.' : null };
+    });
+    return { role, filename, rows, fatal: rows.length ? null : 'El archivo no tiene cuentas, solo encabezados.' };
+}
+function staffImport() {
+    const st = staffImportState;
+    if (st?.done) {
+        const done = st.done; staffImportState = null; // se muestran una sola vez
+        return shell('docentes', `<div class="page-head"><div><h1>${done.length === 1 ? '1 cuenta creada' : done.length + ' cuentas creadas'}</h1><p>Entrega a cada persona su contraseña temporal. Vence en 24 horas. <strong>Esta lista no se volverá a mostrar.</strong></p></div><a class="btn" href="#/docentes">Ir a docentes y dirección</a></div>
+            <div class="table-wrap block"><table class="table"><thead><tr><th>Nombre</th><th>Correo</th><th>Contraseña temporal</th></tr></thead><tbody>${done.map((a) => `<tr><td class="serif cell-name">${esc(a.name)}</td><td class="mono">${esc(a.email)}</td><td class="mono">${a.password}</td></tr>`).join('')}</tbody></table></div>
+            <p class="demo-note">Contraseñas de mentira: en la demo no hay inicio de sesión real.</p>`);
+    }
+    const errors = st?.rows.filter((x) => x.error).length ?? 0; const ok = (st?.rows.length ?? 0) - errors;
+    const preview = st ? `<section class="sec"><h2 class="sec-title">Vista previa de ${esc(st.filename)}, como ${st.role === 'admin' ? 'dirección' : 'docentes'}</h2>
+        ${st.fatal ? `<p class="notice is-error">${esc(st.fatal)}</p>` : errors ? `<p class="notice is-error">${errors === 1 ? 'Hay 1 fila con error' : `Hay ${errors} filas con error`}. Corrige el archivo y vuelve a subirlo: no se creará ninguna cuenta mientras haya errores.</p>` : `<p class="notice">${ok === 1 ? 'Se creará 1 cuenta' : `Se crearán ${ok} cuentas`}, cada una con una contraseña temporal de 24 horas.</p>`}
+        ${st.rows.length ? `<div class="table-wrap" style="margin-top:14px"><table class="table"><thead><tr><th>Línea</th><th>Nombre</th><th>Correo</th><th>Estado</th></tr></thead><tbody>${st.rows.map((x) => `<tr><td class="mono">${x.line}</td><td>${esc(`${x.first} ${x.last}`.trim() || '—')}</td><td class="mono">${esc(x.email || '—')}</td><td>${x.error ? `<span class="tag"><i class="sq falta"></i>${esc(x.error)}</span>` : '<span class="tag"><i class="sq presente"></i>Lista para crear</span>'}</td></tr>`).join('')}</tbody></table></div>` : ''}
+        <div class="form-actions">${!st.fatal && !errors && ok ? `<button class="btn primary" data-act="staff-import-confirm">Crear ${ok === 1 ? '1 cuenta' : ok + ' cuentas'}</button>` : ''}<button class="btn" data-act="staff-import-cancel">${errors || st.fatal ? 'Subir otro archivo' : 'Cancelar'}</button></div></section>` : '';
+    const form = !st || errors || st.fatal ? `<div class="two-col"><form class="sec" data-form="staff-import" novalidate>
+            <div class="field"><span class="field-label">Importar como</span><div class="radio-row"><label class="check"><input type="radio" name="si-role" value="teacher" checked> Docentes</label><label class="check"><input type="radio" name="si-role" value="admin"> Dirección</label></div></div>
+            <div class="field"><label for="si-file">Archivo CSV</label><input class="input file" id="si-file" type="file" accept=".csv,text/csv"></div>
+            <p class="error" id="si-error" hidden></p><div class="form-actions"><button class="btn primary" type="submit">Ver vista previa</button></div></form>
+        <aside class="sec"><h2 class="sec-title">Formato</h2><p class="mono code-line">nombre, apellido_paterno, apellido_materno, correo</p>
+            <ul class="plain"><li>El correo no puede repetirse, ni en el archivo ni con cuentas existentes.</li><li>Cada cuenta recibe una contraseña temporal de 24 h que se muestra una sola vez.</li><li>El archivo se lee en tu navegador: no se sube a ningún servidor.</li></ul>
+            <p style="margin-top:14px"><button class="btn" data-act="staff-template">Descargar plantilla</button></p></aside></div>` : '';
+    return shell('docentes', `<div class="page-head"><div><h1>Importar personal</h1><p>Da de alta muchas cuentas de docentes o de dirección a la vez. Primero verás una vista previa; nada se crea hasta que confirmes.</p></div><a class="btn" href="#/docentes">Volver</a></div>${notice()}${preview}${form}`);
 }
 
 function grupos() {
@@ -479,7 +583,14 @@ document.addEventListener('click', (e) => {
         revoke: () => { S.credentials.filter((c) => c.studentId === id && c.type === t.dataset.type && !c.revokedAt).forEach((c) => (c.revokedAt = new Date().toISOString())); persist(); say(t.dataset.type === 'nfc' ? 'Pegatina NFC desvinculada.' : 'Código QR revocado.'); render(); },
         download: () => { const qr = D.activeCred(S, id, 'qr'); const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([qrSvg(qr.value)], { type: 'image/svg+xml' })), download: `qr-${D.student(S, id).enrollment}.svg` }); a.click(); },
         drop: () => { if (!confirm('¿Dar de baja al alumno? Sus credenciales se revocan.')) return; D.student(S, id).deleted = true; S.credentials.filter((c) => c.studentId === id && !c.revokedAt).forEach((c) => (c.revokedAt = new Date().toISOString())); persist(); say('Alumno dado de baja. Su historial se conserva.'); go('alumnos'); },
-        temp: () => { const u = D.user(S, id); u.temp = true; persist(); say(`Contraseña temporal de ${u.first}: ${Array.from({ length: 3 }, () => Math.random().toString(36).slice(2, 6)).join('-')} (de mentira: es una demo).`); render(); },
+        'staff-temp': () => { const u = D.user(S, id); u.temp = true; persist(); say(`Contraseña temporal de ${u.first}: ${tempPass()}. Vence en 24 h y se muestra una sola vez (de mentira: es una demo).`); render(); },
+        'staff-logout': () => { const u = D.user(S, id); const n = u.sessions; u.sessions = 0; persist(); say(n === 1 ? 'Se cerró 1 sesión.' : `Se cerraron ${n} sesiones.`); render(); },
+        'staff-unlock': () => { const u = D.user(S, id); u.locked = false; persist(); say(`La cuenta de ${D.userName(u)} quedó desbloqueada.`); render(); },
+        'staff-toggle': () => { const u = D.user(S, id); if (u.active && removalBlock(u)) return; u.active = !u.active; if (!u.active) u.sessions = 0; persist(); say(u.active ? `La cuenta de ${D.userName(u)} está activa de nuevo.` : `La cuenta de ${D.userName(u)} quedó suspendida y sus sesiones se cerraron.`); render(); },
+        'staff-drop': () => { const u = D.user(S, id); if (removalBlock(u) || !confirm(`¿Dar de baja a ${D.userName(u)}? Ya no podrá entrar.`)) return; u.deleted = true; u.sessions = 0; persist(); say(`${D.userName(u)} fue dado de baja.`); go('docentes'); },
+        'staff-template': () => { const csv = '\uFEFFnombre,apellido_paterno,apellido_materno,correo\nLaura,Pineda,Ávila,laura.pineda@escuela.mx\nMartín,Cárdenas,,martin.cardenas@escuela.mx\n'; const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })), download: 'plantilla-personal.csv' }); a.click(); },
+        'staff-import-cancel': () => { staffImportState = null; render(); },
+        'staff-import-confirm': () => { const st = staffImportState; if (!st || st.rows.some((x) => x.error)) return; st.done = st.rows.map((x) => { const u = { id: D.nextId(S, 'user'), role: st.role, first: x.first, last: x.last, email: x.email, active: true, deleted: false, temp: true, lastLogin: null, sessions: 0, locked: false }; S.users.push(u); return { name: D.userName(u), email: u.email, password: tempPass() }; }); persist(); render(); },
         print: () => window.print(),
         sim: () => simulate(t.dataset.kind),
         reorder: () => { reordering = !reordering; const c = S.courses.find((x) => x.id === Number($('.room').dataset.course)); c.sort = 'seat'; persist(); render(); },
@@ -548,6 +659,29 @@ document.addEventListener('submit', (e) => {
         if (res.status === 'duplicate') { say(`Ya tiene entrada a las ${D.hm(new Date(res.previous.at))} (${D.methodLabel(res.previous.method)}). No se registró otra.`, true); return render(); }
         persist(); say(`Entrada manual registrada: ${D.fullName(D.student(S, m.sid))}, ${m.time}.`);
         manualState = { q: '', sid: null, reason: '', note: '', time: '' }; render();
+    }
+    if (f.dataset.form === 'staff') {
+        const err = $('#st-error'); const fail = (t) => { err.textContent = t; err.hidden = false; };
+        const first = $('#st-first').value.trim(), last = $('#st-last').value.trim(), email = $('#st-email').value.trim().toLowerCase();
+        const role = document.querySelector('input[name="st-role"]:checked')?.value;
+        if (!first || !last) return fail('Escribe nombre y apellidos.');
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return fail('Escribe un correo válido.');
+        if (S.users.some((u) => u.email.toLowerCase() === email && u.id !== id)) return fail('Ya hay una cuenta con ese correo.');
+        if (id) {
+            const u = D.user(S, id);
+            if (role && role !== u.role && removalBlock(u)) return fail(removalBlock(u));
+            Object.assign(u, { first, last, email, role: role ?? u.role }); persist(); say('Datos guardados.'); return render();
+        }
+        const u = { id: D.nextId(S, 'user'), role, first, last, email, active: true, deleted: false, temp: true, lastLogin: null, sessions: 0, locked: false };
+        S.users.push(u); persist(); say(`Cuenta creada. Contraseña temporal de ${first}: ${tempPass()} (vence en 24 h; de mentira: es una demo).`); return go('docentes/' + u.id);
+    }
+    if (f.dataset.form === 'staff-import') {
+        const file = $('#si-file').files[0]; const err = $('#si-error');
+        if (!file) { err.textContent = 'Elige un archivo CSV.'; err.hidden = false; return; }
+        const role = document.querySelector('input[name="si-role"]:checked').value;
+        const reader = new FileReader();
+        reader.onload = () => { staffImportState = buildStaffPreview(String(reader.result), role, file.name); render(); };
+        reader.readAsText(file, 'utf-8');
     }
     if (f.dataset.form === 'settings') {
         const name = $('#s-name').value.trim(); const win = Number($('#s-win').value);

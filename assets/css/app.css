@@ -503,3 +503,8 @@ body { padding-top: var(--banner-h); }
 .seat .manual-tag, .t .manual-tag { color: var(--pink); }
 @media print { .demo-banner, .site-foot, .print-bar { display: none !important; } body { padding-top: 0; } }
 @media (max-width: 900px) { .site-foot { padding: 16px; } .side { top: var(--banner-h); } .topbar { top: var(--banner-h); } }
+
+/* Panel de acceso de cuentas */
+.compact-facts { grid-template-columns: 160px 1fr; margin-bottom: 10px; }
+.compact-facts dt, .compact-facts dd { padding: 8px 0; }
+.btn:disabled { opacity: .45; cursor: not-allowed; }

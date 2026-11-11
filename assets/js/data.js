@@ -2,7 +2,7 @@
 // Las reglas imitan a la app real: anti-duplicado de entradas, estados del pase de lista
 // (Por confirmar, Presente, Retardo, No en aula, Falta) y cálculo de reportes.
 
-const KEY = 'marcaje-demo-v1';
+const KEY = 'marcaje-demo-v2';
 export const QR_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
 // ── utilidades de fecha (hora local del navegador) ──
@@ -35,7 +35,7 @@ export function seed() {
     const rand = prng(20261110);
     const pick = (arr) => arr[Math.floor(rand() * arr.length)];
     const s = {
-        version: 1,
+        version: 2,
         settings: { institution: 'Plantel Demo', grades: 3, groupsPerGrade: 4, windowMin: 5 },
         users: [
             { id: 1, role: 'admin', first: 'Gabriela', last: 'Solís Ruiz', email: 'direccion@plantel-demo.test' },
@@ -45,11 +45,18 @@ export function seed() {
             { id: 5, role: 'teacher', first: 'Sara', last: 'Medina Robles', email: 'sara.medina@plantel-demo.test' },
         ],
         groups: [], students: [], credentials: [], entries: [], courses: [], schedules: [], rollCalls: [],
-        kiosks: [{ id: 1, name: 'Kiosco 1', location: 'Acceso principal' }, { id: 2, name: 'Kiosco 2', location: 'Acceso de estacionamiento' }],
+        kiosks: [{ id: 1, name: 'Kiosco 1', location: 'Acceso principal', mode: 'both' }, { id: 2, name: 'Kiosco 2', location: 'Acceso de estacionamiento', mode: 'usb' }],
         seq: {},
         session: null,
     };
     const next = (k) => (s.seq[k] = (s.seq[k] ?? 0) + 1);
+    s.seq.user = s.users.length;
+    // Estado de las cuentas (ficticio): último acceso, sesiones abiertas, bloqueo.
+    const ago = (h) => new Date(Date.now() - h * 3600e3).toISOString();
+    s.users.forEach((u, i) => Object.assign(u, { active: true, deleted: false, temp: false, lastLogin: ago(2 + i * 9), sessions: i % 3 === 0 ? 2 : 1, locked: false }));
+    s.users[3].locked = true;   // Martín: bloqueada por intentos fallidos
+    s.users[4].active = false;  // Sara: suspendida
+    s.users[4].sessions = 0;
 
     for (let g = 1; g <= 3; g++) for (let n = 1; n <= 4; n++) s.groups.push({ id: next('group'), grade: g, number: n });
 
@@ -114,7 +121,7 @@ export function seed() {
 export function load() {
     try {
         const raw = localStorage.getItem(KEY);
-        if (raw) { const s = JSON.parse(raw); if (s.version === 1) return s; }
+        if (raw) { const s = JSON.parse(raw); if (s.version === 2) return s; }
     } catch {}
     const s = seed();
     save(s);
@@ -124,7 +131,7 @@ export function save(s) {
     try { localStorage.setItem(KEY, JSON.stringify(s)); } catch {}
 }
 export function reset() {
-    try { localStorage.removeItem(KEY); } catch {}
+    try { localStorage.removeItem(KEY); localStorage.removeItem('marcaje-demo-v1'); } catch {}
 }
 export const nextId = (s, k) => (s.seq[k] = (s.seq[k] ?? 0) + 1);
 
