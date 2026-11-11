@@ -463,8 +463,8 @@ body { padding-top: var(--banner-h); }
 .k-instr { font-size: 1.9cqw; color: var(--muted); margin-top: 1.8cqw; max-width: 26ch; line-height: 1.3; }
 .k-clock { font-family: var(--mono); font-size: 1.5cqw; margin-top: 3cqw; display: flex; gap: 2cqw; color: var(--muted); }
 .k-clock b { color: #FAF9FC; font-weight: 400; }
-.k-zone { display: grid; place-items: center; border-left: 1px solid var(--line); background: var(--surface); position: relative; align-content: center; gap: 4cqw; }
-.k-target { width: 22cqw; aspect-ratio: 1; position: relative; display: grid; place-items: center; }
+.k-zone { display: grid; place-items: center; border-left: 1px solid var(--line); background: var(--surface); position: relative; align-content: center; gap: 3cqw; padding: 3cqw 0; }
+.k-target { width: 17cqw; aspect-ratio: 1; position: relative; display: grid; place-items: center; }
 .k-target::before, .k-target::after { content: ""; position: absolute; inset: 0; border: 1px solid var(--line); border-radius: 2px; }
 .k-target::after { inset: -2.2cqw; opacity: .5; }
 .k-target i { position: absolute; width: 2.2cqw; height: 2.2cqw; border: 0 solid var(--blue); }
@@ -476,7 +476,8 @@ body { padding-top: var(--banner-h); }
 .k-sim { display: flex; gap: 1cqw; flex-wrap: wrap; justify-content: center; }
 .k-sim button { font-family: var(--mono); font-size: 1.15cqw; padding: .8cqw 1.4cqw; border: 1px solid var(--line); border-radius: 2px; color: #FAF9FC; min-height: 44px; }
 .k-sim button:hover { border-color: var(--muted); }
-.k-status { position: absolute; bottom: 2.4cqw; font-family: var(--mono); font-size: 1.05cqw; color: var(--muted); display: flex; gap: 2cqw; }
+.k-status { padding: 0 2.6cqw; font-family: var(--mono); font-size: 1.05cqw; color: var(--muted); display: flex; gap: .5cqw 2cqw; justify-content: center; flex-wrap: wrap; text-align: center; }
+.k-status span:first-child { white-space: nowrap; }
 .k-strip { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(5, 1fr); border-top: 1px solid var(--line); list-style: none; min-height: 8cqw; }
 .k-strip li { padding: 1.4cqw 2cqw; display: grid; gap: .3cqw; align-content: start; min-width: 0; }
 .k-strip li + li { border-left: 1px solid var(--line); }
