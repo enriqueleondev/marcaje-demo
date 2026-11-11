@@ -90,6 +90,7 @@ function render() {
     if (!me() && r.name !== 'login' && r.name !== 'kiosco') return go('login');
     if (r.name === 'login' && me()) return go('inicio');
     if (ADMIN_ONLY.has(r.name) && !isAdmin()) { say('Esa sección es solo para dirección.', true); return go('inicio'); }
+    if (r.name !== 'kiosco') stopCamera();
     const fn = ROUTES[r.name] ?? inicio;
     document.body.classList.toggle('kiosk-mode', r.name === 'kiosco');
     view.innerHTML = fn(r) + (r.name === 'kiosco' || r.name === 'imprimir' ? '' : foot());
@@ -327,11 +328,12 @@ function imprimir(r) {
 function kioscos() {
     const t = D.today();
     return shell('kioscos', `<div class="page-head"><div><h1>Kioscos</h1><p>Tabletas donde los alumnos registran su entrada. ${S.entries.filter((e) => D.ymd(new Date(e.at)) === t).length} entradas hoy.</p></div></div>
-        <div class="table-wrap block"><table class="table"><thead><tr><th>Kiosco</th><th>Estado</th><th>Hoy</th><th><span class="sr-only">Acciones</span></th></tr></thead><tbody>
-        ${S.kiosks.map((k) => `<tr><td><span class="serif cell-name">${esc(k.name)}</span><br><span class="muted">${esc(k.location)}</span></td><td><span class="tag"><i class="sq presente"></i>En línea</span></td><td class="mono">${S.entries.filter((e) => e.kioskId === k.id && D.ymd(new Date(e.at)) === t).length}</td><td class="actions-cell"><a class="btn" href="#/kiosco/${k.id}">Abrir kiosco</a></td></tr>`).join('')}
+        <div class="table-wrap block"><table class="table"><thead><tr><th>Kiosco</th><th>Estado</th><th>Lectura</th><th>Hoy</th><th><span class="sr-only">Acciones</span></th></tr></thead><tbody>
+        ${S.kiosks.map((k) => `<tr><td><span class="serif cell-name">${esc(k.name)}</span><br><span class="muted">${esc(k.location)}</span></td><td><span class="tag"><i class="sq presente"></i>En línea</span></td><td><a class="link" href="#/ajustes">${MODES[k.mode ?? 'usb']}</a></td><td class="mono">${S.entries.filter((e) => e.kioskId === k.id && D.ymd(new Date(e.at)) === t).length}</td><td class="actions-cell"><a class="btn" href="#/kiosco/${k.id}">Abrir kiosco</a></td></tr>`).join('')}
         </tbody></table></div><p class="demo-note">En la app real cada tableta se vincula escaneando un QR con un token propio (solo se guarda su hash), funciona sin conexión con una cola en IndexedDB y se instala como app.</p>`);
 }
 
+const MODES = { usb: 'Lector USB', camera: 'Cámara', both: 'Ambos' };
 let kioskTimer; let kioskClock;
 function kiosco(r) {
     const kid = Number(r.args[0]) || 1;
@@ -341,11 +343,18 @@ function kiosco(r) {
         <div class="k-greet"><div class="k-org"><div><b>${esc(S.settings.institution)}</b>${esc(k.name)}, ${esc(k.location)}</div><a href="#/${me() ? 'kioscos' : 'login'}">Salir del kiosco</a></div>
             <h1 id="k-greeting">Buenos días.</h1><p class="k-instr">Pasa tu credencial por el lector o muestra tu código QR.</p>
             <div class="k-clock"><b id="k-clock">--:--:--</b><span id="k-date"></span></div></div>
-        <div class="k-zone"><div class="k-target"><i></i><i></i><i></i><i></i><span>Lector NFC<br>y QR</span></div>
-            <div class="k-sim" aria-label="Simular lecturas"><button type="button" data-act="sim" data-kind="qr">Simular lectura QR</button><button type="button" data-act="sim" data-kind="nfc">Simular NFC</button><button type="button" data-act="sim" data-kind="dup">Repetir la última</button><button type="button" data-act="sim" data-kind="bad">Credencial inválida</button></div>
+        <div class="k-zone">${k.mode && k.mode !== 'usb' ? `<div class="k-cam" id="k-cam">
+                <div class="k-cam-ask" id="k-cam-ask"><p class="k-cam-title">Este kiosco lee el QR con la cámara</p><p>La imagen se procesa en tu navegador para leer el código: no se guarda ni se envía a ningún lado.</p><button type="button" class="k-cam-btn" data-act="cam-start">Activar cámara</button></div>
+                <div class="k-cam-live" id="k-cam-live" hidden><div class="k-cam-frame"><video id="k-cam-video" playsinline muted autoplay aria-label="Vista de la cámara"></video><span class="k-cam-guide" aria-hidden="true"><i></i><i></i><i></i><i></i></span></div>
+                    <p class="k-cam-hint">Centra tu código QR aquí</p>
+                    <div class="k-cam-controls"><label class="sr-only" for="k-cam-select">Cámara</label><select id="k-cam-select" hidden></select><button type="button" id="k-cam-flip" data-act="cam-flip" hidden>Cambiar cámara</button></div></div>
+                <div class="k-cam-msg" id="k-cam-msg" role="alert" hidden></div>
+            </div>` : '<div class="k-target"><i></i><i></i><i></i><i></i><span>Lector NFC<br>y QR</span></div>'}
+            <div class="k-sim" aria-label="Simular lecturas"><button type="button" data-act="sim" data-kind="qr">Simular lectura QR</button><button type="button" data-act="sim" data-kind="nfc">Simular NFC</button><button type="button" data-act="sim" data-kind="dup">Repetir la última</button><button type="button" data-act="sim" data-kind="bad">Credencial inválida</button>${k.mode && k.mode !== 'usb' ? '<button type="button" data-act="show-qr">Mostrar un QR de prueba</button>' : ''}</div>
             <div class="k-status"><span id="k-today"></span><span>También puedes teclear un código y pulsar Enter, como un lector USB.</span></div></div>
         <ol class="k-strip" id="k-strip" aria-label="Últimas entradas"></ol>
     </div>
+    <div class="k-qr" id="k-qr" hidden><div class="k-qr-box" id="k-qr-box"></div><p class="k-qr-name" id="k-qr-name"></p><p>Muéstralo a la cámara del kiosco desde otro dispositivo (o imprímelo).</p><button type="button" data-act="hide-qr">Cerrar</button></div>
     <div class="k-flash" id="k-flash" role="status" aria-live="assertive" hidden><div class="k-mono" id="k-mono"></div><div><p class="k-kind"><i></i><span id="k-kind"></span></p><p class="k-name" id="k-name"></p><dl><dt>Grado y grupo</dt><dd id="k-group"></dd><dt id="k-tlabel">Hora</dt><dd id="k-time"></dd><dt>Método</dt><dd id="k-method"></dd></dl></div></div>`;
 }
 
@@ -380,7 +389,7 @@ function kioskScan(raw) {
     $('#k-time').textContent = kind === 'ok' ? D.hms(new Date(res.entry.at)) : kind === 'dup' ? D.hm(new Date(res.previous.at)) : '';
     $('#k-method').textContent = res.method ?? '';
     const m = $('#k-mono'); m.style.animation = 'none'; void m.offsetWidth; m.style.animation = '';
-    f.hidden = false; beep(kind);
+    f.hidden = false; beep(kind); camState.pausedUntil = Date.now() + 1800;
     clearTimeout(kioskTimer); kioskTimer = setTimeout(() => { f.hidden = true; }, 1500);
     if (kind === 'ok') renderStrip(kid);
 }
@@ -395,6 +404,64 @@ function simulate(kind) {
     lastSim = c.value;
     // El NFC se "teclea" con separadores, como algunos lectores: la app lo normaliza.
     kioskScan(kind === 'nfc' ? c.value.match(/../g).join(':') : c.value);
+}
+
+// ── Cámara del kiosco (modo "Cámara" o "Ambos") ──
+// BarcodeDetector nativo o, si no existe, zxing (assets/vendor/zxing.min.js, se carga al usarlo).
+// Mismas reglas que el lector: anti-duplicado, pausa durante la confirmación y 5 s sin releer el mismo QR.
+const camState = { stream: null, facing: 'environment', timer: null, decode: null, busy: false, last: new Map(), pausedUntil: 0 };
+function stopCamera() { clearInterval(camState.timer); camState.stream?.getTracks().forEach((t) => t.stop()); camState.stream = null; }
+const loadZxing = () => window.ZXing ? Promise.resolve(window.ZXing) : new Promise((res, rej) => { const s = Object.assign(document.createElement('script'), { src: 'assets/vendor/zxing.min.js', onload: () => res(window.ZXing), onerror: rej }); document.head.append(s); });
+async function makeDecoder() {
+    if ('BarcodeDetector' in window) {
+        try { if ((await window.BarcodeDetector.getSupportedFormats()).includes('qr_code')) { const d = new window.BarcodeDetector({ formats: ['qr_code'] }); return async (v) => (await d.detect(v))[0]?.rawValue ?? null; } } catch {}
+    }
+    const Z = await loadZxing(); const reader = new Z.QRCodeReader();
+    const canvas = document.createElement('canvas'); const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    return async (v) => {
+        const w = v.videoWidth, h = v.videoHeight; if (!w) return null;
+        const side = Math.min(w, h), size = Math.min(side, 640); canvas.width = canvas.height = size;
+        ctx.drawImage(v, (w - side) / 2, (h - side) / 2, side, side, 0, 0, size, size);
+        const { data } = ctx.getImageData(0, 0, size, size); const lum = new Uint8ClampedArray(size * size);
+        for (let i = 0, j = 0; i < data.length; i += 4, j++) lum[j] = (data[i] * 77 + data[i + 1] * 150 + data[i + 2] * 29) >> 8;
+        try { return reader.decode(new Z.BinaryBitmap(new Z.HybridBinarizer(new Z.RGBLuminanceSource(lum, size, size)))).getText(); } catch { return null; } finally { reader.reset(); }
+    };
+}
+async function openCamera(deviceId) {
+    camState.stream?.getTracks().forEach((t) => t.stop());
+    camState.stream = await navigator.mediaDevices.getUserMedia({ video: deviceId ? { deviceId: { exact: deviceId } } : { facingMode: { ideal: camState.facing } }, audio: false });
+    const v = $('#k-cam-video'); v.srcObject = camState.stream; await v.play().catch(() => {});
+    const st = camState.stream.getVideoTracks()[0]?.getSettings?.() ?? {};
+    v.parentElement.classList.toggle('mirror', st.facingMode === 'user');
+}
+async function startCamera() {
+    const msg = $('#k-cam-msg'); msg.hidden = true;
+    if (!navigator.mediaDevices?.getUserMedia) return camProblem('Este navegador no permite usar la cámara aquí. Prueba en Chrome.');
+    try { await openCamera(); } catch (e) {
+        return camProblem(e?.name === 'NotAllowedError' ? '<b>No hay permiso para usar la cámara.</b> Toca el candado junto a la dirección › Permisos › Cámara › Permitir, y vuelve a activarla. Mientras tanto puedes usar "Simular lectura".' : '<b>No se pudo abrir la cámara.</b> Revisa que esté conectada y que otra app no la use.');
+    }
+    $('#k-cam-ask').hidden = true; $('#k-cam-live').hidden = false;
+    const cams = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'videoinput');
+    const sel = $('#k-cam-select'); const cur = camState.stream.getVideoTracks()[0]?.getSettings?.().deviceId;
+    sel.replaceChildren(...cams.map((d, i) => Object.assign(document.createElement('option'), { value: d.deviceId, textContent: d.label || `Cámara ${i + 1}`, selected: d.deviceId === cur })));
+    sel.hidden = cams.length < 2; $('#k-cam-flip').hidden = cams.length < 2;
+    camState.decode ??= await makeDecoder();
+    clearInterval(camState.timer);
+    camState.timer = setInterval(async () => {
+        const v = $('#k-cam-video'); if (!v) return stopCamera();
+        if (camState.busy || Date.now() < camState.pausedUntil || v.readyState < 2) return;
+        camState.busy = true;
+        try { const raw = await camState.decode(v); const code = raw ? D.normalize(raw) : ''; const now = Date.now();
+            if (code.length >= 4 && now - (camState.last.get(code) ?? 0) > 5000) { camState.last.set(code, now); kioskScan(code); } } catch {} finally { camState.busy = false; }
+    }, 180);
+}
+function camProblem(html) { $('#k-cam-ask').hidden = false; const m = $('#k-cam-msg'); m.innerHTML = html; m.hidden = false; }
+document.addEventListener('change', async (e) => { if (e.target.id === 'k-cam-select') { try { await openCamera(e.target.value); } catch {} } });
+function showTestQr() {
+    const t = D.today(); const entered = new Set(S.entries.filter((e) => D.ymd(new Date(e.at)) === t).map((e) => e.studentId));
+    const c = S.credentials.find((x) => x.type === 'qr' && !x.revokedAt && !entered.has(x.studentId));
+    const st = D.student(S, c.studentId);
+    $('#k-qr-box').innerHTML = qrSvg(c.value, 6); $('#k-qr-name').textContent = `${D.fullName(st)} · ${D.qrDisplay(c.value)}`; $('#k-qr').hidden = false;
 }
 
 // Lectores HID: teclean el código y Enter. Captura global sin campo enfocado.
@@ -561,6 +628,10 @@ function ajustes() {
             <div class="field"><label for="s-win">Anti-duplicado del kiosco (minutos)</label><input class="input compact mono" id="s-win" type="number" min="1" max="60" value="${S.settings.windowMin}"><p class="hint">Si el mismo alumno pasa otra vez dentro de este tiempo, no se registra otra entrada.</p></div>
             <div class="field"><span class="field-label">Grados y grupos</span><p>${S.settings.grades} grados × ${S.settings.groupsPerGrade} grupos</p></div>
             <div class="form-actions"><button class="btn primary" type="submit">Guardar</button></div></form>
+        <section class="block"><h2 class="block-title">Kioscos: modo de lectura</h2><form data-form="kiosk-modes"><div class="table-wrap"><table class="table"><thead><tr><th>Kiosco</th><th>Modo</th></tr></thead><tbody>
+            ${S.kiosks.map((k) => `<tr><td><span class="serif cell-name">${esc(k.name)}</span><br><span class="muted">${esc(k.location)}</span></td><td><div class="radio-row">${Object.entries(MODES).map(([v, l]) => `<label class="check"><input type="radio" name="mode-${k.id}" value="${v}" ${(k.mode ?? 'usb') === v ? 'checked' : ''}> ${l}</label>`).join('')}</div></td></tr>`).join('')}
+            </tbody></table></div><ul class="plain" style="max-width:70ch"><li><b>Lector USB:</b> lectores NFC y QR conectados a la tableta.</li><li><b>Cámara:</b> la cámara de la tableta o la webcam lee el QR (pide permiso).</li><li><b>Ambos:</b> cámara activa y lectores USB al mismo tiempo.</li></ul>
+            <div class="form-actions"><button class="btn primary" type="submit">Guardar modos</button></div></form></section>
         <section class="sec" style="max-width:480px;margin-top:24px"><h2 class="sec-title">Datos de la demo</h2><p class="muted">Todo se guarda solo en este navegador. Reiniciar borra tus cambios y vuelve a los datos ficticios de arranque.</p><p style="margin-top:12px"><button class="btn danger" data-act="reset">Reiniciar demo</button></p></section>`);
 }
 
@@ -593,6 +664,11 @@ document.addEventListener('click', (e) => {
         'staff-import-confirm': () => { const st = staffImportState; if (!st || st.rows.some((x) => x.error)) return; st.done = st.rows.map((x) => { const u = { id: D.nextId(S, 'user'), role: st.role, first: x.first, last: x.last, email: x.email, active: true, deleted: false, temp: true, lastLogin: null, sessions: 0, locked: false }; S.users.push(u); return { name: D.userName(u), email: u.email, password: tempPass() }; }); persist(); render(); },
         print: () => window.print(),
         sim: () => simulate(t.dataset.kind),
+        'cam-start': () => startCamera(),
+        'cam-flip': async () => { camState.facing = camState.facing === 'environment' ? 'user' : 'environment'; try { await openCamera(); } catch {} },
+        'show-qr': () => showTestQr(),
+        'hide-qr': () => { $('#k-qr').hidden = true; },
+        'kiosk-modes': () => {},
         reorder: () => { reordering = !reordering; const c = S.courses.find((x) => x.id === Number($('.room').dataset.course)); c.sort = 'seat'; persist(); render(); },
         alpha: () => { const c = S.courses.find((x) => x.id === Number($('.room').dataset.course)); c.seats = []; persist(); say('Lugares en orden alfabético.'); render(); },
         'confirm-all': () => { const rc = S.rollCalls.find((x) => x.id === Number($('.room').dataset.rc)); const sch = S.schedules.find((x) => x.id === rc.scheduleId); let n = 0; for (const sid of Object.keys(rc.marks)) if (rc.marks[sid] === null && D.entryFor(S, Number(sid), rc.date, sch.end)) { rc.marks[sid] = 'present'; n++; } persist(); say(`${n} entradas confirmadas.`); render(); },
@@ -682,6 +758,9 @@ document.addEventListener('submit', (e) => {
         const reader = new FileReader();
         reader.onload = () => { staffImportState = buildStaffPreview(String(reader.result), role, file.name); render(); };
         reader.readAsText(file, 'utf-8');
+    }
+    if (f.dataset.form === 'kiosk-modes') {
+        S.kiosks.forEach((k) => { k.mode = document.querySelector(`input[name="mode-${k.id}"]:checked`)?.value ?? k.mode; }); persist(); say('Modo de lectura guardado.'); return render();
     }
     if (f.dataset.form === 'settings') {
         const name = $('#s-name').value.trim(); const win = Number($('#s-win').value);
